@@ -186,8 +186,8 @@ defmodule RFC8785.PropertyTest do
 
   # Numeric equivalence is defined by the canonical form itself: 100.0 and
   # 100 are the same JSON value, as are a float and the bignum parsed from
-  # its integral canonical output. Comparing via 1.0 * int would reintroduce
-  # BEAM's incorrectly rounded bignum conversion into the test.
+  # its integral canonical output, so the comparison goes through the
+  # encoder rather than through arithmetic of its own.
   defp equivalent?(a, b) when is_number(a) and is_number(b) do
     RFC8785.encode!(a) == RFC8785.encode!(b)
   end
