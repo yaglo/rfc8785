@@ -23,7 +23,7 @@ document = %{"amount" => 100, "currency" => "GBP"}
 :crypto.hash(:sha256, RFC8785.encode_to_iodata!(document))
 ```
 
-The library has no runtime dependencies and requires Erlang/OTP 29 and
+The library has no runtime dependencies and requires Erlang/OTP 29.1 and
 Elixir 1.20.2 or later.
 
 ## Installation

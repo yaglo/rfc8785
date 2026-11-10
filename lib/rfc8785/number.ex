@@ -22,8 +22,6 @@ defmodule RFC8785.Number do
   #   3. Format `{digits, n}` following NumberToString steps 6-10 literally,
   #      one function clause per rule.
 
-  import Bitwise
-
   alias RFC8785.EncodeError
 
   # 2^53. Every integer with |i| <= 2^53 is exactly representable as an
@@ -76,105 +74,29 @@ defmodule RFC8785.Number do
             "Encode it as a string."
     end
 
+    # |int| < 1e21 here, far inside the double range, so the conversion
+    # cannot overflow. It is correctly rounded (nearest, ties to even) on
+    # OTP 29.1 and later, which RFC8785 requires at compile time; earlier
+    # releases could return the second-nearest double for integers wider
+    # than 64 bits and would falsely reject exact decimal forms of doubles.
     digits = Integer.to_string(int)
+    canonical = encode_float(:erlang.float(int))
 
-    case nearest_double(int) do
-      float when is_float(float) ->
-        canonical = encode_float(float)
-
-        if canonical == digits do
-          digits
-        else
-          raise EncodeError,
-            reason: :integer_unrepresentable,
-            message:
-              "cannot canonicalize integer #{digits} at " <>
-                "#{EncodeError.format_path(path)}: RFC 8785 represents numbers " <>
-                "as IEEE-754 doubles, and the canonical form of this value's " <>
-                "nearest double is #{canonical}, which does not preserve the " <>
-                "integer's decimal digits (interoperable integers stay within " <>
-                "±2^53). Convert the value to a float to accept that form, or " <>
-                "encode it as a string."
-        end
-
-      :overflow ->
-        raise EncodeError,
-          reason: :integer_unrepresentable,
-          message:
-            "cannot canonicalize integer #{digits} at " <>
-              "#{EncodeError.format_path(path)}: the value is outside the " <>
-              "IEEE-754 double range. Encode it as a string."
-    end
-  end
-
-  # Correctly rounded integer-to-double conversion, round half to even.
-  #
-  # BEAM's own conversion (`:erlang.float/1`, mixed-type arithmetic such as
-  # `1.0 * int`) is not correctly rounded for integers wider than 64 bits:
-  # for example `1.0 * 428654966685883400000` yields the second-nearest
-  # double. Using it here would falsely reject integers that are the exact
-  # decimal form of a double. The conversion is therefore done directly:
-  # take the top 53 bits of the magnitude, round on the remainder, and
-  # assemble the IEEE-754 encoding.
-  #
-  # Only called with |int| > 2^53, so the magnitude always has more than
-  # 53 significant bits.
-  defp nearest_double(int) when int < 0 do
-    case nearest_double(-int) do
-      :overflow -> :overflow
-      float -> -float
-    end
-  end
-
-  defp nearest_double(int) do
-    width = bit_width(int)
-    shift = width - 53
-    mantissa = int >>> shift
-    remainder = int - (mantissa <<< shift)
-    half = 1 <<< (shift - 1)
-
-    mantissa =
-      cond do
-        remainder > half -> mantissa + 1
-        remainder < half -> mantissa
-        (mantissa &&& 1) == 1 -> mantissa + 1
-        true -> mantissa
-      end
-
-    # Rounding up can carry into a 54th bit (mantissa == 2^53).
-    {mantissa, shift} =
-      if mantissa == 1 <<< 53 do
-        {mantissa >>> 1, shift + 1}
-      else
-        {mantissa, shift}
-      end
-
-    # Value is mantissa * 2^shift with mantissa in [2^52, 2^53), that is
-    # 1.fraction * 2^exponent with exponent = shift + 52.
-    exponent = shift + 52
-
-    if exponent > 1023 do
-      :overflow
+    if canonical == digits do
+      digits
     else
-      <<float::float-64>> = <<0::1, exponent + 1023::11, mantissa - (1 <<< 52)::52>>
-      float
+      raise EncodeError,
+        reason: :integer_unrepresentable,
+        message:
+          "cannot canonicalize integer #{digits} at " <>
+            "#{EncodeError.format_path(path)}: RFC 8785 represents numbers " <>
+            "as IEEE-754 doubles, and the canonical form of this value's " <>
+            "nearest double is #{canonical}, which does not preserve the " <>
+            "integer's decimal digits (interoperable integers stay within " <>
+            "±2^53). Convert the value to a float to accept that form, or " <>
+            "encode it as a string."
     end
   end
-
-  defp bit_width(int) do
-    bytes = :binary.encode_unsigned(int)
-    <<first, _::binary>> = bytes
-    bit_size(bytes) - 8 + significant_bits(first)
-  end
-
-  defp significant_bits(byte) when byte >= 128, do: 8
-  defp significant_bits(byte) when byte >= 64, do: 7
-  defp significant_bits(byte) when byte >= 32, do: 6
-  defp significant_bits(byte) when byte >= 16, do: 5
-  defp significant_bits(byte) when byte >= 8, do: 4
-  defp significant_bits(byte) when byte >= 4, do: 3
-  defp significant_bits(byte) when byte >= 2, do: 2
-  defp significant_bits(_byte), do: 1
 
   @doc """
   Serializes a float exactly as ECMAScript `Number::toString` would.

@@ -126,10 +126,10 @@ defmodule RFC8785.NumberTest do
       end
     end
 
-    test "bignum conversion is correctly rounded (BEAM `1.0 * int` is not)" do
-      # Each value is canonical output of some double, but BEAM's own
-      # bignum-to-float conversion returns the second-nearest double for it,
-      # so an implementation built on `1.0 * int` rejects all of them.
+    test "bignum conversion is correctly rounded" do
+      # Each value is canonical output of some double. Before OTP 29.1,
+      # BEAM's bignum-to-float conversion returned the second-nearest double
+      # for it, and an encoder built on that conversion rejected all of them.
       for int <- [
             428_654_966_685_883_400_000,
             -428_654_966_685_883_400_000,

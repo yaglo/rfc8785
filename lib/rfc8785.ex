@@ -126,14 +126,22 @@ defmodule RFC8785 do
 
   ## Requirements
 
-  Erlang/OTP 29 or later, checked at compile time, and Elixir 1.20.2 or
-  later.
+  Erlang/OTP 29.1 or later, checked at compile time, and Elixir 1.20.2 or
+  later. OTP 29.1 (ERTS 17.1) is the first release in which converting an
+  integer wider than 64 bits to a float rounds to the nearest double, which
+  the integer rule above depends on.
   """
 
-  otp_release = :erlang.system_info(:otp_release) |> List.to_integer()
+  # ERTS 17.1 ships with OTP 29.1. The ERTS version is used because the OTP
+  # release number alone ("29") does not say which 29.x is running.
+  erts_version = :erlang.system_info(:version) |> List.to_string()
 
-  if otp_release < 29 do
-    raise "rfc8785 requires Erlang/OTP 29 or later (found OTP #{otp_release})"
+  [erts_major, erts_minor | _] =
+    erts_version |> String.split(".") |> Enum.map(&String.to_integer/1)
+
+  if {erts_major, erts_minor} < {17, 1} do
+    raise "rfc8785 requires Erlang/OTP 29.1 or later (found ERTS #{erts_version}, " <>
+            "OTP #{:erlang.system_info(:otp_release)})"
   end
 
   alias RFC8785.{DecodeError, Decoder, EncodeError, Encoder}
