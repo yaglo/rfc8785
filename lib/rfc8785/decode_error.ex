@@ -10,6 +10,8 @@ defmodule RFC8785.DecodeError do
     * data after the end of the document, other than whitespace
     * a fraction- or exponent-form number outside the IEEE-754 double
       range, such as `1e400`
+    * an integer token too long for the runtime to represent at all (a few
+      million digits), which only `RFC8785.decode!/1` attempts to build
     * an unpaired surrogate in a `\\u` escape sequence
     * a Unicode noncharacter in a string or object name
     * a duplicate object name, which RFC 8785 forbids via its I-JSON
@@ -32,6 +34,8 @@ defmodule RFC8785.DecodeError do
     * `:trailing_data` — non-whitespace after the document
     * `:number_out_of_range` — a number literal outside the IEEE-754 double
       range, such as `1e400`
+    * `:integer_too_large` — an integer token beyond the runtime's integer
+      size limit
     * `:unpaired_surrogate` — an unpaired surrogate in a `\\u` escape
     * `:noncharacter` — a Unicode noncharacter, which I-JSON excludes
     * `:duplicate_name` — a duplicate object name, which I-JSON forbids
@@ -43,6 +47,7 @@ defmodule RFC8785.DecodeError do
           | :unexpected_end
           | :trailing_data
           | :number_out_of_range
+          | :integer_too_large
           | :unpaired_surrogate
           | :noncharacter
           | :duplicate_name

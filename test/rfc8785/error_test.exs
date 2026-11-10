@@ -22,6 +22,7 @@ defmodule RFC8785.ErrorTest do
       {:unexpected_end, fn -> RFC8785.canonicalize("{") end},
       {:trailing_data, fn -> RFC8785.canonicalize("[1] x") end},
       {:number_out_of_range, fn -> RFC8785.canonicalize("1e400") end},
+      {:integer_too_large, fn -> RFC8785.decode(:binary.copy("9", 2_000_000)) end},
       {:unpaired_surrogate, fn -> RFC8785.canonicalize(~S("\uDC00")) end},
       {:noncharacter, fn -> RFC8785.canonicalize(~S({"x":"﷐"})) end},
       {:duplicate_name, fn -> RFC8785.canonicalize(~S({"a":1,"a":2})) end},

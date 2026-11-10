@@ -154,6 +154,30 @@ defmodule RFC8785Test do
                ~s({"#{g_clef}":1,"#{dalet}":2})
     end
 
+    test "BMP-only objects and objects with a supplementary name agree on BMP order" do
+      # Objects whose names all lie within the BMP are sorted on their UTF-8
+      # bytes; one name above U+FFFF switches the object to UTF-16 sort keys.
+      # Both paths must place the BMP names identically, and the
+      # supplementary name must land before U+E000..U+FFFF, where its
+      # surrogate pair sorts.
+      # Listed in the required order.
+      bmp = ["", "\u0000", "A", "a", "é", "€", "\uD7FF", "\uE000", "\uFFFD"]
+      {below, above} = Enum.split(bmp, 7)
+
+      # String serialization is not under test here, so name literals come
+      # from the encoder itself.
+      object = fn names ->
+        "{" <> Enum.map_join(names, ",", &(RFC8785.encode!(&1) <> ":0")) <> "}"
+      end
+
+      for shuffled <- [bmp, Enum.reverse(bmp), Enum.shuffle(bmp)] do
+        assert RFC8785.encode!(Map.new(shuffled, &{&1, 0})) == object.(bmp)
+
+        assert RFC8785.encode!(Map.new(["😀" | shuffled], &{&1, 0})) ==
+                 object.(below ++ ["😀"] ++ above)
+      end
+    end
+
     test "prefix names sort before their extensions" do
       assert RFC8785.encode!(%{"ab" => 1, "a" => 2}) == ~S({"a":2,"ab":1})
     end

@@ -29,34 +29,56 @@ defmodule RFC8785.StringEncoder do
   end
 
   @doc """
-  Returns the key by which an object name is sorted: its UTF-16 big-endian
-  encoding. RFC 8785, Section 3.2.3, requires object names to be sorted by
-  their UTF-16 code units; bytewise comparison of UTF-16BE binaries is
-  exactly that comparison. Raises `RFC8785.EncodeError` if `name` is not an
-  I-JSON string.
+  Validates an object name once and reports whether it contains a code
+  point above U+FFFF, which decides how the object's names must be sorted
+  (see `utf16_sort_key/1`). Raises `RFC8785.EncodeError` if `name` is not
+  an I-JSON string.
   """
-  @spec sort_key(binary(), EncodeError.path()) :: binary()
-  def sort_key(name, path) do
-    validate!(name, path, "object name")
-
-    case :unicode.characters_to_binary(name, :utf8, {:utf16, :big}) do
-      key when is_binary(key) ->
-        key
-
-      _error_or_incomplete ->
-        raise EncodeError,
-          reason: :invalid_string,
-          message:
-            "object name is not valid UTF-8: #{inspect(name)} " <>
-              "at #{EncodeError.format_path(path)}"
+  @spec validate_name!(binary(), EncodeError.path()) :: Unicode.plane()
+  def validate_name!(name, path) do
+    case Unicode.validate_and_classify(name) do
+      {:ok, plane} -> plane
+      error -> raise_invalid!(error, path, "object name")
     end
+  end
+
+  @doc """
+  Serializes a string that `validate_name!/2` has already accepted, without
+  validating it again.
+  """
+  @spec encode_validated(binary(), EncodeError.path()) :: iolist()
+  def encode_validated(string, path) when is_binary(string) do
+    [?", escape(string, string, 0, 0, [], path), ?"]
+  end
+
+  @doc """
+  Returns the UTF-16 big-endian encoding of an already validated name.
+
+  RFC 8785, Section 3.2.3, sorts object names by their UTF-16 code units,
+  and bytewise comparison of UTF-16BE binaries is exactly that comparison.
+  It differs from bytewise comparison of the UTF-8 form only when a code
+  point above U+FFFF is involved: such a code point is a surrogate pair
+  (0xD800..0xDFFF) in UTF-16 and so sorts before U+E000..U+FFFF, while its
+  four-byte UTF-8 form sorts after them. Objects whose names are all within
+  the BMP are therefore sorted on the UTF-8 binaries directly.
+  """
+  @spec utf16_sort_key(binary()) :: binary()
+  def utf16_sort_key(name) do
+    key = :unicode.characters_to_binary(name, :utf8, {:utf16, :big})
+    true = is_binary(key)
+    key
   end
 
   defp validate!(string, path, kind) do
     case Unicode.validate(string) do
-      :ok ->
-        :ok
+      :ok -> :ok
+      error -> raise_invalid!(error, path, kind)
+    end
+  end
 
+  @spec raise_invalid!(tuple(), EncodeError.path(), String.t()) :: no_return()
+  defp raise_invalid!(error, path, kind) do
+    case error do
       {:invalid_utf8, offset} ->
         raise EncodeError,
           reason: :invalid_string,
