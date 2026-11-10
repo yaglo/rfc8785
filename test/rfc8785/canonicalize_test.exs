@@ -279,6 +279,25 @@ defmodule RFC8785.CanonicalizeTest do
       assert {:error, %RFC8785.DecodeError{}} = RFC8785.decode("-0e0")
       assert {:error, %RFC8785.DecodeError{}} = RFC8785.decode(~S({"a": 1, "a": 2}))
     end
+
+    test "an integer token beyond the runtime's integer limit is a decode error" do
+      # binary_to_integer/1 raises SystemLimitError here; it must not escape
+      # the {:error, _} contract.
+      json = ~S({"n":[1,) <> :binary.copy("9", 2_000_000) <> "]}"
+
+      assert {:error, %RFC8785.DecodeError{reason: :integer_too_large} = error} =
+               RFC8785.decode(json)
+
+      assert error.message =~ "$.n[1]"
+      assert byte_size(error.message) < 200
+
+      assert_raise RFC8785.DecodeError, fn -> RFC8785.decode!(json) end
+    end
+
+    test "a long integer token within the runtime's limit still decodes" do
+      digits = :binary.copy("9", 1_000)
+      assert RFC8785.decode(digits) == {:ok, String.to_integer(digits)}
+    end
   end
 
   describe "encode_to_iodata/1" do

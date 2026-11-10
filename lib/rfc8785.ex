@@ -118,7 +118,9 @@ defmodule RFC8785 do
   magnitude digits is rejected before constructing a bignum, because it
   cannot preserve those integer digits in canonical JCS output.
   `decode!/1` remains a general decoding API and does materialize such
-  tokens as arbitrary-precision integers.
+  tokens as arbitrary-precision integers, up to the runtime's integer size
+  limit (a few million digits); a longer token raises `RFC8785.DecodeError`
+  with reason `:integer_too_large`.
 
   The library does not impose an overall document byte, nesting-depth, or
   member-count limit. Callers handling untrusted documents must enforce

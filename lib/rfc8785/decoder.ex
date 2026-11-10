@@ -126,12 +126,28 @@ defmodule RFC8785.Decoder do
        ),
        do: integer
 
+  # The runtime caps integer size (a few million decimal digits); past it
+  # binary_to_integer/1 raises SystemLimitError. Report that as a decode
+  # error like any other unusable token rather than letting it escape
+  # decode/1's {:error, _} contract.
   defp validate_and_transform!(
          %OversizeInteger{token: token},
-         _path,
+         path,
          :materialize_oversize_integers
-       ),
-       do: :erlang.binary_to_integer(token)
+       ) do
+    :erlang.binary_to_integer(token)
+  rescue
+    SystemLimitError ->
+      reraise DecodeError,
+              [
+                reason: :integer_too_large,
+                message:
+                  "integer token at #{EncodeError.format_path(path)} has " <>
+                    "#{byte_size(token)} bytes, which exceeds the largest integer " <>
+                    "this runtime can represent"
+              ],
+              __STACKTRACE__
+  end
 
   defp validate_and_transform!(string, path, _oversize_mode) when is_binary(string) do
     case Unicode.validate(string) do

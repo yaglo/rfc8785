@@ -90,31 +90,47 @@ defmodule RFC8785.Encoder do
   # -- Objects ---------------------------------------------------------------
   #
   # RFC 8785, Section 3.2.3: object names sort by their UTF-16 code units.
-  # Each name's UTF-16BE sort key is computed once and entries are sorted
-  # with List.keysort/2. RFC 8785 requires I-JSON (RFC 7493) input, in
-  # which object names are unique, so duplicates produced by key coercion
-  # (an atom key and a string key with the same name) are rejected.
+  # Each name is validated exactly once. When every name in the object lies
+  # within the BMP, UTF-16 code-unit order equals bytewise order of the
+  # UTF-8 binaries, so the names are sorted as they are; only an object with
+  # a name above U+FFFF pays for UTF-16BE sort keys (see
+  # StringEncoder.utf16_sort_key/1). RFC 8785 requires I-JSON (RFC 7493)
+  # input, in which object names are unique, so duplicates produced by key
+  # coercion (an atom key and a string key with the same name) are rejected.
 
   defp encode_object(map, path) do
-    entries =
+    {entries, plane} =
       map
       |> Map.to_list()
-      |> Enum.map(fn {key, value} ->
+      |> Enum.map_reduce(:bmp, fn {key, value}, plane ->
         name = coerce_name(key, path)
-        {StringEncoder.sort_key(name, [name | path]), name, value}
-      end)
-      |> List.keysort(0)
 
+        case StringEncoder.validate_name!(name, [name | path]) do
+          :bmp -> {{name, value}, plane}
+          :supplementary -> {{name, value}, :supplementary}
+        end
+      end)
+
+    entries = sort_entries(entries, plane)
     assert_unique_names(entries, path)
 
     inner =
       entries
-      |> Enum.map(fn {_sort_key, name, value} ->
-        [StringEncoder.encode(name, path), ?: | encode(value, [name | path])]
+      |> Enum.map(fn {name, value} ->
+        [StringEncoder.encode_validated(name, path), ?: | encode(value, [name | path])]
       end)
       |> Enum.intersperse(?,)
 
     [?{, inner, ?}]
+  end
+
+  defp sort_entries(entries, :bmp), do: List.keysort(entries, 0)
+
+  defp sort_entries(entries, :supplementary) do
+    entries
+    |> Enum.map(fn {name, value} -> {StringEncoder.utf16_sort_key(name), name, value} end)
+    |> List.keysort(0)
+    |> Enum.map(fn {_sort_key, name, value} -> {name, value} end)
   end
 
   defp coerce_name(key, _path) when is_binary(key), do: key
@@ -128,7 +144,7 @@ defmodule RFC8785.Encoder do
           "only strings and atoms may be used as object names"
   end
 
-  defp assert_unique_names([{_key, name, _value} | rest], path) do
+  defp assert_unique_names([{name, _value} | rest], path) do
     check_adjacent(rest, name, path)
   end
 
@@ -136,7 +152,7 @@ defmodule RFC8785.Encoder do
 
   defp check_adjacent([], _previous, _path), do: :ok
 
-  defp check_adjacent([{_key, name, _value} | rest], previous, path) do
+  defp check_adjacent([{name, _value} | rest], previous, path) do
     if name == previous do
       raise EncodeError,
         reason: :duplicate_name,
